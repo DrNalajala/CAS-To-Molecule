@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CAS Chemical Analyzer PRO</title>
+
+<style>
+body {
+    font-family: Arial;
+    background: #f4f6f8;
+    text-align: center;
+}
+.container {
+    margin-top: 40px;
+}
+input {
+    padding: 10px;
+    width: 300px;
+    font-size: 16px;
+}
+button {
+    padding: 10px 20px;
+    background: #007BFF;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+.card {
+    margin-top: 20px;
+    padding: 20px;
+    background: white;
+    width: 60%;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 10px;
+    text-align: left;
+    word-break: break-all;
+}
+img {
+    display: block;
+    margin: 10px auto;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>🧪 CAS Chemical Analyzer PRO</h1>
+
+    <input type="text" id="casInput" placeholder="Enter CAS or Name">
+    <br><br>
+    <button onclick="searchCAS()">Search</button>
+
+    <div id="result" class="card" style="display:none;"></div>
+</div>
+
+<script>
+
+// 🔹 Get CID
+async function getCID(query) {
+    let url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${query}/cids/JSON`;
+    let res = await fetch(url);
+    let data = await res.json();
+    return data.IdentifierList.CID[0];
+}
+
+// 🔹 Get properties
+async function getProperties(cid) {
+    let url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/MolecularFormula,MolecularWeight,IUPACName,InChI/JSON`;
+    let res = await fetch(url);
+    let data = await res.json();
+    return data.PropertyTable.Properties[0];
+}
+
+// 🔹 Get synonyms + extract CAS
+async function getCASandSynonyms(cid) {
+    try {
+        let url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/synonyms/JSON`;
+        let res = await fetch(url);
+        let data = await res.json();
+
+        let syns = data.InformationList.Information[0].Synonym;
+
+        let cas = "Not available";
+
+        // Find CAS (pattern: xxx-xx-x)
+        for (let s of syns) {
+            if (/^\d{2,7}-\d{2}-\d$/.test(s)) {
+                cas = s;
+                break;
+            }
+        }
+
+        // Clean synonyms (remove CAS + long junk)
+        let cleanSyns = syns.filter(s => 
+            s !== cas &&
+            s.length < 30 &&
+            !s.match(/^[0-9\-]+$/)
+        ).slice(0, 2);
+
+        return { cas, cleanSyns };
+
+    } catch {
+        return { cas: "Not available", cleanSyns: ["No synonyms"] };
+    }
+}
+
+// 🔹 Main function
+async function searchCAS() {
+    let query = document.getElementById("casInput").value.trim();
+    let resultDiv = document.getElementById("result");
+
+    if (!query) {
+        alert("Enter CAS or Name");
+        return;
+    }
+
+    resultDiv.style.display = "block";
+    resultDiv.innerHTML = "Loading...";
+
+    try {
+        let cid = await getCID(query);
+        let c = await getProperties(cid);
+        let { cas, cleanSyns } = await getCASandSynonyms(cid);
+
+        resultDiv.innerHTML = `
+            <h2>${c.IUPACName || "N/A"}</h2>
+
+            <img src="https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/PNG" width="200">
+
+            <p><b>Input:</b> ${query}</p>
+            <p><b>CAS Number:</b> ${cas}</p>
+            <p><b>Molecular Formula:</b> ${c.MolecularFormula}</p>
+            <p><b>Molecular Weight:</b> ${c.MolecularWeight}</p>
+
+            <p><b>InChI:</b><br>${c.InChI}</p>
+
+            <h3>🔹 Synonyms</h3>
+            <p>${cleanSyns.join("<br>")}</p>
+        `;
+
+    } catch (error) {
+        resultDiv.innerHTML = "❌ Error fetching data.";
+    }
+}
+
+</script>
+
+</body>
+</html>
